@@ -1,7 +1,8 @@
 #include "WebRTCSignalingServer.h"
+#include "log.h"
 #include <iostream>
 #include <random>
-#include <nlohmann/json.hpp>
+#include <sstream>
 
 using json = nlohmann::json;
 
@@ -20,14 +21,14 @@ WebRTCSignalingServer::WebRTCSignalingServer(int port)
     m_server = std::make_unique<rtc::WebSocketServer>(config);
     
     m_server->onClient([this](std::shared_ptr<rtc::WebSocket> client) {
-        auto clientId = ++m_clientIdCounter;
+        uint64_t clientId = getNextClientId();
         
         {
             std::lock_guard<std::mutex> lock(m_clientsMutex);
             m_clients[clientId] = client;
         }
         
-        std::cout << "\nClient #" << clientId << " connected" << std::endl;
+        LOG(NOTICE, "Client #%llu connected", clientId);
         
         createPeerConnectionForClient(client, clientId);
         
@@ -55,19 +56,24 @@ WebRTCSignalingServer::WebRTCSignalingServer(int port)
             
             m_clients.erase(clientId);
             
-            std::cout << "Client #" << clientId << " disconnected (Remaining: " << m_clients.size() << ")" << std::endl;
+            {
+                std::lock_guard<std::mutex> idLock(m_idMutex);
+                m_availableIds.push(clientId);
+            }
+            
+            LOG(NOTICE, "Client #%llu disconnected (Remaining: %zu)", clientId, m_clients.size());
         });
         
         client->onError([clientId](std::string error) {
-            std::cerr << "Client #" << clientId << " error: " << error << std::endl;
+            LOG(ERROR, "Client #%llu error: %s", clientId, error.c_str());
         });
     });
     
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "WebRTC Server Started on port " << port << std::endl;
-    std::cout << "WebSocket URL: ws://localhost:" << port << std::endl;
-    std::cout << "Multi-client support: Yes" << std::endl;
-    std::cout << "========================================" << std::endl;
+    LOG(NOTICE, "========================================");
+    LOG(NOTICE, "WebRTC Server Started on port %d", port);
+    LOG(NOTICE, "WebSocket URL: ws://0.0.0.0:%d", port);
+    LOG(NOTICE, "Multi-client support: Yes");
+    LOG(NOTICE, "========================================");
 }
 
 WebRTCSignalingServer::~WebRTCSignalingServer() {
@@ -81,6 +87,21 @@ void WebRTCSignalingServer::run() {
     while (m_running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+}
+
+uint64_t WebRTCSignalingServer::getNextClientId() {
+    std::lock_guard<std::mutex> lock(m_idMutex);
+    
+    if (!m_availableIds.empty()) {
+        uint64_t id = m_availableIds.front();
+        m_availableIds.pop();
+        LOG(DEBUG, "Reusing client ID: %llu", id);
+        return id;
+    }
+    
+    uint64_t newId = ++m_clientIdCounter;
+    LOG(DEBUG, "Allocating new client ID: %llu", newId);
+    return newId;
 }
 
 void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::WebSocket> client, uint64_t clientId) {
@@ -99,7 +120,7 @@ void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::W
             case rtc::PeerConnection::State::Failed: stateStr = "Failed"; break;
             case rtc::PeerConnection::State::Closed: stateStr = "Closed"; break;
         }
-        std::cout << "Client #" << clientId << " PC State: " << stateStr << std::endl;
+        LOG(INFO, "Client #%llu PC State: %s", clientId, stateStr);
     });
     
     pc->onGatheringStateChange([this, client, clientId, pc, ctx](rtc::PeerConnection::GatheringState state) {
@@ -113,9 +134,9 @@ void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::W
                 try {
                     client->send(message.dump());
                     ctx->offerSent = true;
-                    std::cout << "Offer sent to client #" << clientId << std::endl;
+                    LOG(INFO, "Offer sent to client #%llu", clientId);
                 } catch (const std::exception& e) {
-                    std::cerr << "Failed to send offer: " << e.what() << std::endl;
+                    LOG(ERROR, "Failed to send offer: %s", e.what());
                 }
             }
         }
@@ -130,6 +151,7 @@ void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::W
             
             try {
                 client->send(iceMsg.dump());
+                LOG(DEBUG, "ICE candidate sent to client #%llu", clientId);
             } catch(const std::exception& e) {}
         }
     });
@@ -149,7 +171,7 @@ void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::W
         if (ctx->trackOpen) return;
         ctx->trackOpen = true;
         
-        std::cout << "Video track opened for client #" << clientId << std::endl;
+        LOG(INFO, "Video track opened for client #%llu", clientId);
         
         ctx->transcoderSubId = m_transcoderManager->subscribe(
             [clientId, videoTrack, ctx](std::vector<uint8_t> &&data) {
@@ -162,7 +184,9 @@ void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::W
                         videoTrack->send(bin);
                         ctx->frameCount++;
                         ctx->bytesSent += data.size();
-                    } catch (const std::exception& e) {}
+                    } catch (const std::exception& e) {
+                        // 静默失败
+                    }
                 }
             }
         );
@@ -177,7 +201,7 @@ void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::W
         if (ctx->transcoderSubId != 0) {
             m_transcoderManager->unsubscribe(ctx->transcoderSubId);
             ctx->transcoderSubId = 0;
-            std::cout << "Client #" << clientId << " unsubscribed" << std::endl;
+            LOG(INFO, "Client #%llu unsubscribed", clientId);
         }
         ctx->trackOpen = false;
     });
@@ -210,7 +234,25 @@ void WebRTCSignalingServer::handleMessage(std::shared_ptr<rtc::WebSocket> client
             if (it != m_clientPCs.end() && it->second->pc) {
                 rtc::Description answer(j["sdp"].get<std::string>(), "answer");
                 it->second->pc->setRemoteDescription(answer);
-                std::cout << "Answer received from client #" << clientId << std::endl;
+                it->second->remoteDescriptionSet = true;
+                
+                LOG(INFO, "Answer received from client #%llu", clientId);
+                
+                if (!it->second->pendingIceCandidates.empty()) {
+                    LOG(INFO, "Processing %zu cached ICE candidates", it->second->pendingIceCandidates.size());
+                    for (size_t i = 0; i < it->second->pendingIceCandidates.size(); i++) {
+                        rtc::Candidate candidate;
+                        if (i < it->second->pendingIceSdpMids.size() && !it->second->pendingIceSdpMids[i].empty()) {
+                            candidate = rtc::Candidate(it->second->pendingIceCandidates[i], 
+                                                        it->second->pendingIceSdpMids[i]);
+                        } else {
+                            candidate = rtc::Candidate(it->second->pendingIceCandidates[i]);
+                        }
+                        it->second->pc->addRemoteCandidate(candidate);
+                    }
+                    it->second->pendingIceCandidates.clear();
+                    it->second->pendingIceSdpMids.clear();
+                }
             }
         }
         else if (type == "ice") {
@@ -220,16 +262,24 @@ void WebRTCSignalingServer::handleMessage(std::shared_ptr<rtc::WebSocket> client
                 std::string candidateStr = j["candidate"].get<std::string>();
                 std::string sdpMid = j.value("sdpMid", "");
                 
-                rtc::Candidate candidate;
-                if (!sdpMid.empty()) {
-                    candidate = rtc::Candidate(candidateStr, sdpMid);
+                if (it->second->remoteDescriptionSet) {
+                    rtc::Candidate candidate;
+                    if (!sdpMid.empty()) {
+                        candidate = rtc::Candidate(candidateStr, sdpMid);
+                    } else {
+                        candidate = rtc::Candidate(candidateStr);
+                    }
+                    it->second->pc->addRemoteCandidate(candidate);
+                    LOG(DEBUG, "ICE candidate added for client #%llu", clientId);
                 } else {
-                    candidate = rtc::Candidate(candidateStr);
+                    it->second->pendingIceCandidates.push_back(candidateStr);
+                    it->second->pendingIceSdpMids.push_back(sdpMid);
+                    LOG(DEBUG, "ICE candidate cached for client #%llu (total: %zu)", 
+                        clientId, it->second->pendingIceCandidates.size());
                 }
-                it->second->pc->addRemoteCandidate(candidate);
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "Error handling message: " << e.what() << std::endl;
+        LOG(ERROR, "Error handling message: %s", e.what());
     }
 }

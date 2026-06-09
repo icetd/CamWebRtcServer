@@ -1,8 +1,27 @@
 #include "WebRTCSignalingServer.h"
 #include <iostream>
+#include "INIReader.h"
+#include "log.h"
 
 int main() {
-    rtc::InitLogger(rtc::LogLevel::Info);
+    int port;
+    INIReader configs("./configs/config.ini");
+    if (configs.ParseError() < 0) {
+        printf("read config failed.");
+        exit(1);
+    } else {
+        std::string level = configs.Get("log", "level", "NOTICE");
+        if (level == "NOTICE") {
+            initLogger(NOTICE);
+        } else if (level == "INFO") {
+            initLogger(INFO);
+        } else if (level == "ERROR") {
+            initLogger(ERROR);
+        }
+        port = configs.GetInteger("Server", "port", 8080);
+    }
+
+    rtc::InitLogger(rtc::LogLevel::Error);
     rtc::Preload();
     
     std::cout << "\n╔══════════════════════════════════════════════════╗" << std::endl;
@@ -11,7 +30,7 @@ int main() {
     std::cout << "╚══════════════════════════════════════════════════╝\n" << std::endl;
     
     try {
-        WebRTCSignalingServer server(8080);
+        WebRTCSignalingServer server(port);
         server.run();
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
