@@ -1,5 +1,5 @@
 #include "SharedTranscoderManager.h"
-#include <iostream>
+#include "log.h"
 #include <chrono>
 
 SharedTranscoderManager::SharedTranscoderManager() 
@@ -33,31 +33,37 @@ bool SharedTranscoderManager::start() {
     });
     
     m_encoderThread = std::make_unique<std::thread>([this]() {
-        std::cout << "Shared Transcoder started" << std::endl;
+        LOG(INFO, "Shared Transcoder started");
         m_transcoder->run();
-        std::cout << "Shared Transcoder stopped" << std::endl;
+        LOG(INFO, "Shared Transcoder stopped");
     });
     
     m_distributorThread = std::make_unique<std::thread>([this]() {
         distributeFrames();
     });
     
-    std::cout << "Shared Transcoder Manager initialized" << std::endl;
+    LOG(INFO, "Shared Transcoder Manager initialized");
     return true;
 }
 
 void SharedTranscoderManager::stop() {
+    LOG(INFO, "Stopping Shared Transcoder Manager...");
     m_running = false;
     m_frameCV.notify_all();
-    if (m_encoderThread && m_encoderThread->joinable()) m_encoderThread->join();
-    if (m_distributorThread && m_distributorThread->joinable()) m_distributorThread->join();
+    if (m_encoderThread && m_encoderThread->joinable()) {
+        m_encoderThread->join();
+    }
+    if (m_distributorThread && m_distributorThread->joinable()) {
+        m_distributorThread->join();
+    }
+    LOG(INFO, "Shared Transcoder Manager stopped");
 }
 
 uint64_t SharedTranscoderManager::subscribe(std::function<void(std::vector<uint8_t>&&)> callback) {
     std::lock_guard<std::mutex> lock(m_subscribersMutex);
     uint64_t clientId = ++m_nextClientId;
     m_subscribers[clientId] = std::move(callback);
-    std::cout << "Client subscribed (ID: " << clientId << ", Total: " << m_subscribers.size() << ")" << std::endl;
+    LOG(INFO, "Client subscribed (ID: %llu, Total: %zu)", clientId, m_subscribers.size());
     return clientId;
 }
 
@@ -66,7 +72,7 @@ void SharedTranscoderManager::unsubscribe(uint64_t clientId) {
     auto it = m_subscribers.find(clientId);
     if (it != m_subscribers.end()) {
         m_subscribers.erase(it);
-        std::cout << "Client unsubscribed (ID: " << clientId << ", Remaining: " << m_subscribers.size() << ")" << std::endl;
+        LOG(INFO, "Client unsubscribed (ID: %llu, Remaining: %zu)", clientId, m_subscribers.size());
     }
 }
 
@@ -76,6 +82,9 @@ size_t SharedTranscoderManager::getSubscriberCount() {
 }
 
 void SharedTranscoderManager::distributeFrames() {
+    int frameCount = 0;
+    auto lastStatTime = std::chrono::steady_clock::now();
+    
     while (m_running) {
         std::unique_lock<std::mutex> lock(m_frameMutex);
         m_frameCV.wait_for(lock, std::chrono::milliseconds(33), [this] {
@@ -90,16 +99,30 @@ void SharedTranscoderManager::distributeFrames() {
             
             std::lock_guard<std::mutex> subsLock(m_subscribersMutex);
             std::vector<uint64_t> deadClients;
+            
             for (auto& [clientId, callback] : m_subscribers) {
                 try {
                     std::vector<uint8_t> clientData(frameData);
                     callback(std::move(clientData));
                 } catch (const std::exception& e) {
+                    LOG(WARN, "Failed to send to client #%llu: %s", clientId, e.what());
                     deadClients.push_back(clientId);
                 }
             }
+            
             for (auto clientId : deadClients) {
                 m_subscribers.erase(clientId);
+                LOG(WARN, "Removed dead client #%llu", clientId);
+            }
+            
+            frameCount++;
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastStatTime).count();
+            if (elapsed >= 10) {
+                LOG(INFO, "Distribution stats: %d frames in %lds, %d fps, %zu subscribers", 
+                    frameCount, elapsed, frameCount / elapsed, m_subscribers.size());
+                frameCount = 0;
+                lastStatTime = now;
             }
         }
     }

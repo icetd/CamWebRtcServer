@@ -8,6 +8,9 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
+#include <vector>
+#include <string>
+#include <queue>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -25,11 +28,17 @@ private:
         std::shared_ptr<rtc::Track> videoTrack;
         uint64_t transcoderSubId = 0;
         bool offerSent = false;
+        bool remoteDescriptionSet = false;
         std::chrono::steady_clock::time_point connectTime;
         std::atomic<uint64_t> frameCount{0};
         std::atomic<uint64_t> bytesSent{0};
         bool trackOpen = false;
+        
+        std::vector<std::string> pendingIceCandidates;
+        std::vector<std::string> pendingIceSdpMids;
     };
+    
+    uint64_t getNextClientId();  // 新增：获取下一个可用的客户端 ID
     
     void createPeerConnectionForClient(std::shared_ptr<rtc::WebSocket> client, uint64_t clientId);
     void handleMessage(std::shared_ptr<rtc::WebSocket> client, uint64_t clientId, 
@@ -47,6 +56,10 @@ private:
     
     std::mutex m_clientsMutex;
     std::mutex m_pcMutex;
+    
+    // ID 重用
+    std::queue<uint64_t> m_availableIds;  // 可重用的 ID
+    std::mutex m_idMutex;
 };
 
 #endif
