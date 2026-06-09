@@ -5,7 +5,8 @@
 
 int LogLevel;
 
-int main() {
+int main()
+{
     int port;
     INIReader configs("./configs/config.ini");
     if (configs.ParseError() < 0) {
@@ -25,19 +26,20 @@ int main() {
 
     rtc::InitLogger(rtc::LogLevel::Error);
     rtc::Preload();
-    
+
     std::cout << "\n╔══════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║   WebRTC Multi-Client Server (Local Network)    ║" << std::endl;
     std::cout << "║         For LAN use - No STUN/TURN required      ║" << std::endl;
-    std::cout << "╚══════════════════════════════════════════════════╝\n" << std::endl;
-    
+    std::cout << "╚══════════════════════════════════════════════════╝\n"
+              << std::endl;
+
     try {
         WebRTCSignalingServer server(port);
         server.run();
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
         return 1;
     }
-    
+
     return 0;
 }

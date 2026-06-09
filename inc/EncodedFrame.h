@@ -8,9 +8,9 @@ struct EncodedFrame {
     std::vector<uint8_t> data;
     uint64_t timestamp;
     uint32_t frameId;
-    
+
     EncodedFrame();
-    EncodedFrame(std::vector<uint8_t>&& d, uint64_t ts, uint32_t fid);
+    EncodedFrame(std::vector<uint8_t> &&d, uint64_t ts, uint32_t fid);
 };
 
 #endif
