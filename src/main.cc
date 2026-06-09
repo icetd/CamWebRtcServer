@@ -3,6 +3,8 @@
 #include "INIReader.h"
 #include "log.h"
 
+int LogLevel;
+
 int main() {
     int port;
     INIReader configs("./configs/config.ini");

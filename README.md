@@ -1,3 +1,6 @@
+## Project Description
+CamWebRtcServer - A multi-client WebRTC video streaming server for USB cameras.
+
 ## build
 ```
 ./scripts/build_x264.sh
@@ -38,9 +41,17 @@ format = MJPEG
 device = /dev/video0
 
 [Server]
-port = 8000
+port = 8000 ; websocket server port
 ```
 ## function
-- support mjpeg and yuy2 format usb camera.
-- support h264 codec.
-- support webrtc h264 stream
+✅ Support MJPEG and YUY2 format USB cameras
+
+✅ H.264 software encoding
+
+✅ WebRTC H.264 streaming
+
+✅ Multi-client support with single encoder instance
+
+✅ Auto reconnection
+
+✅ WebGL frontend rendering
