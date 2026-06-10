@@ -1,10 +1,10 @@
 #ifndef SHARED_TRANSCODER_MANAGER_H
 #define SHARED_TRANSCODER_MANAGER_H
 
+#include "MThread.h"
 #include "transcoder.h"
 #include "EncodedFrame.h"
 #include <memory>
-#include <thread>
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
@@ -12,14 +12,15 @@
 #include <unordered_map>
 #include <vector>
 
-class SharedTranscoderManager
+class SharedTranscoderManager : public MThread
 {
 public:
     SharedTranscoderManager();
     ~SharedTranscoderManager();
 
-    bool start();
-    void stop();
+    bool init();
+    void run() override;
+    void shutdown();
 
     uint64_t subscribe(std::function<void(std::vector<uint8_t> &&)> callback);
     void unsubscribe(uint64_t clientId);
@@ -29,8 +30,6 @@ private:
     void distributeFrames();
 
     std::shared_ptr<TransCoder> m_transcoder;
-    std::unique_ptr<std::thread> m_encoderThread;
-    std::unique_ptr<std::thread> m_distributorThread;
 
     std::atomic<bool> m_running;
     std::atomic<uint32_t> m_lastFrameId;

@@ -39,7 +39,7 @@ private:
         std::vector<std::string> pendingIceSdpMids;
     };
 
-    uint64_t getNextClientId(); // 新增：获取下一个可用的客户端 ID
+    uint64_t getNextClientId();
 
     void createPeerConnectionForClient(std::shared_ptr<rtc::WebSocket> client, uint64_t clientId);
     void handleMessage(std::shared_ptr<rtc::WebSocket> client, uint64_t clientId,
@@ -58,8 +58,7 @@ private:
     std::mutex m_clientsMutex;
     std::mutex m_pcMutex;
 
-    // ID 重用
-    std::queue<uint64_t> m_availableIds; // 可重用的 ID
+    std::queue<uint64_t> m_availableIds;
     std::mutex m_idMutex;
 };
 

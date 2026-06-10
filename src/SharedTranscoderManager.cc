@@ -9,15 +9,11 @@ SharedTranscoderManager::SharedTranscoderManager() : m_running(false), m_lastFra
 
 SharedTranscoderManager::~SharedTranscoderManager()
 {
-    stop();
+    shutdown();
 }
 
-bool SharedTranscoderManager::start()
+bool SharedTranscoderManager::init()
 {
-    if (m_running) return true;
-
-    m_running = true;
-
     m_transcoder->setOnEncoderDataCallback([this](std::vector<uint8_t> &&data) {
         if (!data.empty()) {
             std::lock_guard<std::mutex> lock(m_frameMutex);
@@ -33,31 +29,33 @@ bool SharedTranscoderManager::start()
         }
     });
 
-    m_encoderThread = std::make_unique<std::thread>([this]() {
-        LOG(INFO, "Shared Transcoder started");
-        m_transcoder->run();
-        LOG(INFO, "Shared Transcoder stopped");
-    });
-
-    m_distributorThread = std::make_unique<std::thread>([this]() {
-        distributeFrames();
-    });
+    m_transcoder->start();
 
     LOG(INFO, "Shared Transcoder Manager initialized");
     return true;
 }
 
-void SharedTranscoderManager::stop()
+void SharedTranscoderManager::run()
 {
+    LOG(INFO, "Shared Transcoder Manager distributor started");
+    distributeFrames();
+    LOG(INFO, "Shared Transcoder Manager distributor stopped");
+}
+
+void SharedTranscoderManager::shutdown()
+{
+    if (!m_running) return;
+
     LOG(INFO, "Stopping Shared Transcoder Manager...");
     m_running = false;
     m_frameCV.notify_all();
-    if (m_encoderThread && m_encoderThread->joinable()) {
-        m_encoderThread->join();
+
+    if (m_transcoder) {
+        m_transcoder->stop();
     }
-    if (m_distributorThread && m_distributorThread->joinable()) {
-        m_distributorThread->join();
-    }
+
+    MThread::stop();
+
     LOG(INFO, "Shared Transcoder Manager stopped");
 }
 
@@ -88,6 +86,7 @@ size_t SharedTranscoderManager::getSubscriberCount()
 
 void SharedTranscoderManager::distributeFrames()
 {
+    m_running = true;
     int frameCount = 0;
     auto lastStatTime = std::chrono::steady_clock::now();
 

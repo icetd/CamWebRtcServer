@@ -9,9 +9,10 @@ using json = nlohmann::json;
 WebRTCSignalingServer::WebRTCSignalingServer(int port) : m_port(port), m_clientIdCounter(0), m_running(true)
 {
     m_transcoderManager = std::make_shared<SharedTranscoderManager>();
-    if (!m_transcoderManager->start()) {
+    if (!m_transcoderManager->init()) {
         throw std::runtime_error("Failed to start transcoder manager");
     }
+    m_transcoderManager->start();
 
     rtc::WebSocketServer::Configuration config;
     config.port = port;
@@ -79,7 +80,7 @@ WebRTCSignalingServer::~WebRTCSignalingServer()
 {
     m_running = false;
     if (m_transcoderManager) {
-        m_transcoderManager->stop();
+        m_transcoderManager->shutdown();
     }
 }
 
