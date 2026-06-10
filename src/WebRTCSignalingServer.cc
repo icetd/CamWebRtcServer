@@ -109,7 +109,9 @@ uint64_t WebRTCSignalingServer::getNextClientId()
 
 void WebRTCSignalingServer::createPeerConnectionForClient(std::shared_ptr<rtc::WebSocket> client, uint64_t clientId)
 {
-    auto pc = std::make_shared<rtc::PeerConnection>();
+    rtc::Configuration config;
+    config.iceServers.push_back(rtc::IceServer("stun:stun.l.google.com:19302"));
+    auto pc = std::make_shared<rtc::PeerConnection>(config);
     auto ctx = std::make_shared<ClientContext>();
     ctx->pc = pc;
     ctx->connectTime = std::chrono::steady_clock::now();

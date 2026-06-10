@@ -27,12 +27,6 @@ int main()
     rtc::InitLogger(rtc::LogLevel::Error);
     rtc::Preload();
 
-    std::cout << "\n╔══════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║   WebRTC Multi-Client Server (Local Network)    ║" << std::endl;
-    std::cout << "║         For LAN use - No STUN/TURN required      ║" << std::endl;
-    std::cout << "╚══════════════════════════════════════════════════╝\n"
-              << std::endl;
-
     try {
         WebRTCSignalingServer server(port);
         server.run();
