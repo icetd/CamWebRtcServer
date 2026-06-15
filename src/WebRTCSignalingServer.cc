@@ -3,8 +3,38 @@
 #include <iostream>
 #include <random>
 #include <sstream>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 using json = nlohmann::json;
+
+static std::string getLocalIP() {
+    struct ifaddrs *ifaddr, *ifa;
+    std::string ip = "";
+    
+    if (getifaddrs(&ifaddr) == -1) {
+        return "127.0.0.1";
+    }
+    
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+        
+        if (ifa->ifa_addr->sa_family == AF_INET) {
+            struct sockaddr_in *sa = (struct sockaddr_in*)ifa->ifa_addr;
+            char addr[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &(sa->sin_addr), addr, INET_ADDRSTRLEN);
+            
+            if (strcmp(addr, "127.0.0.1") != 0) {
+                ip = addr;
+                break;
+            }
+        }
+    }
+    
+    freeifaddrs(ifaddr);
+    return ip.empty() ? "127.0.0.1" : ip;
+}
 
 WebRTCSignalingServer::WebRTCSignalingServer(int port) : m_port(port), m_clientIdCounter(0), m_running(true)
 {
@@ -69,10 +99,10 @@ WebRTCSignalingServer::WebRTCSignalingServer(int port) : m_port(port), m_clientI
         });
     });
 
+    std::string localIP = getLocalIP();
     LOG(NOTICE, "========================================");
-    LOG(NOTICE, "WebRTC Server Started on port %d", port);
-    LOG(NOTICE, "WebSocket URL: ws://0.0.0.0:%d", port);
-    LOG(NOTICE, "Multi-client support: Yes");
+    LOG(NOTICE, "WebRTC Server Started");
+    LOG(NOTICE, "WebSocket URL: ws://%s:%d", localIP.c_str(), port);
     LOG(NOTICE, "========================================");
 }
 
