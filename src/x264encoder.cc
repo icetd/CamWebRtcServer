@@ -131,16 +131,38 @@ int X264Encoder::encode(uint8_t *inbuf, int insize, uint8_t *outbuf, std::string
     int height = m_x264_param.height;
     
     if (format == "MJPEG") {
-        // MJPEG 解码后应该是 YUV420P
+        // MJPEG 解码后应该是 YUV420P 或者 YUV422P
         int y_size = width * height;
         int uv_size = y_size / 4;
         uint8_t *y = pic_in->img.plane[0];
         uint8_t *u = pic_in->img.plane[1];
         uint8_t *v = pic_in->img.plane[2];
-        
-        memcpy(y, inbuf, y_size);
-        memcpy(u, inbuf + y_size, uv_size);
-        memcpy(v, inbuf + y_size + uv_size, uv_size);
+
+        if (insize == y_size * 3 / 2) {
+            // YUV420P
+            memcpy(y, inbuf, y_size);
+            memcpy(u, inbuf + y_size, y_size / 4);
+            memcpy(v, inbuf + y_size + y_size / 4, y_size / 4);
+        } else if (insize == y_size * 2) {
+            // YUV422P
+            memcpy(y, inbuf, y_size);
+
+            uint8_t *src_u = inbuf + y_size;
+            uint8_t *src_v = src_u + y_size / 2;
+
+            // 422 -> 420
+            for (int row = 0; row < height / 2; row++) {
+                memcpy(
+                    u + row * width / 2,
+                    src_u + (row * 2) * width / 2,
+                    width / 2);
+
+                memcpy(
+                    v + row * width / 2,
+                    src_v + (row * 2) * width / 2,
+                    width / 2);
+            }
+        }
     } 
     else if (format == "YUY2") {
         // YUY2 格式：Y0 U0 Y1 V0 Y2 U1 Y3 V1 ...
