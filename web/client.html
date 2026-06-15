@@ -501,7 +501,7 @@ function updateFPS() {
     }
 }
 
-// 初始化WebGL
+// 初始化WebGL - 修复镜像问题（在片元着色器中翻转）
 function initWebGL() {
     gl = canvas.getContext('webgl', { 
         alpha: false,
@@ -515,6 +515,7 @@ function initWebGL() {
         return false;
     }
     
+    // 顶点着色器 - 正常传递纹理坐标
     const vsSource = `
         attribute vec2 a_position;
         varying vec2 v_texCoord;
@@ -524,12 +525,15 @@ function initWebGL() {
         }
     `;
     
+    // 片元着色器 - 在这里翻转X轴，修复镜像问题
     const fsSource = `
         precision highp float;
         uniform sampler2D u_texture;
         varying vec2 v_texCoord;
         void main() {
-            gl_FragColor = texture2D(u_texture, v_texCoord);
+            // 翻转X坐标，修复左右镜像
+            vec2 flippedCoord = vec2(1.0 - v_texCoord.x, v_texCoord.y);
+            gl_FragColor = texture2D(u_texture, flippedCoord);
         }
     `;
     
@@ -640,26 +644,20 @@ function cleanupWS() {
 function fullCleanup() {
     console.log('🧹 Full cleanup...');
     
-    // 清除定时器
     if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
     }
     
-    // 清理 video 元素
     if (videoElement.srcObject) {
         const tracks = videoElement.srcObject.getTracks();
         tracks.forEach(track => track.stop());
         videoElement.srcObject = null;
     }
     
-    // 清理 PeerConnection
     cleanupPC();
-    
-    // 清理 WebSocket
     cleanupWS();
     
-    // 重置状态
     reconnectAttempts = 0;
     updateReconnectCount();
     isManualReconnecting = false;
@@ -770,7 +768,6 @@ function scheduleReconnect() {
 
 // WebSocket连接
 function connectWebSocket() {
-    // 先完整清理
     fullCleanup();
     
     let wsUrl;
@@ -835,20 +832,14 @@ function connectWebSocket() {
     };
 }
 
-// 手动重连 - 完整重置后重新连接
+// 手动重连
 function manualReconnect() {
     console.log('🔄 Manual reconnect triggered');
     isManualReconnecting = true;
-    
-    // 完整清理
     fullCleanup();
-    
-    // 重置状态
     reconnectAttempts = 0;
     updateReconnectCount();
     updateStatus('connecting', 'manual reconnect...');
-    
-    // 延迟后重新连接
     setTimeout(() => {
         connectWebSocket();
     }, 100);
