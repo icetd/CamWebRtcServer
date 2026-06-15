@@ -378,11 +378,14 @@ function saveServer(server) {
     }
 }
 
-// 解析服务器地址和端口
+// 解析服务器地址和端口 - 自动处理 ws:// 前缀
 function parseServerAddress(input) {
     if (!input) return { host: '', port: 8000 };
     
     let address = input.trim();
+    // 移除 ws:// 或 wss:// 前缀
+    address = address.replace(/^wss?:\/\//, '');
+    // 也移除 http:// 或 https:// 前缀（防止用户误输）
     address = address.replace(/^https?:\/\//, '');
     
     let host = address;
@@ -412,7 +415,7 @@ function getCurrentServerString() {
     return '';
 }
 
-// 获取完整的 WebSocket URL
+// 获取完整的 WebSocket URL - 自动添加 ws://
 function getWebSocketUrl() {
     const serverStr = getCurrentServerString();
     if (!serverStr) {
@@ -910,7 +913,7 @@ window.addEventListener('beforeunload', () => {
     fullCleanup();
 });
 
-console.log('📡 请输入服务器地址，例如: 192.168.3.136:8000');
+console.log('📡 请输入服务器地址，例如: 192.168.3.136:8000 (无需加 ws://)');
 </script>
 </body>
 </html>
